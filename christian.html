@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Filtrado y Dashboard</title>
+  <style>
+    :root{
+      --primary:#00589C;
+      --primary-light:#2d7cc2;
+      --primary-dark:#003f70;
+
+      --bg:#f1f6fb;
+      --panel:#ffffff;
+      --card:#f7fbff;
+
+      --text:#0b1d2e;
+      --muted:#5c738a;
+      --shadow:0 18px 40px rgba(0,0,0,0.18);
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{
+      font-family: Arial, sans-serif;
+      background: radial-gradient(circle at top left, #e6f0fb 0%, #f6f9fd 55%);
+      color:var(--text);
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:30px 16px;
+    }
+    .wrapper{width:100%;max-width:1180px;}
+    header{text-align:center;margin-bottom:28px;}
+    header h1{font-size:2.3rem;color:var(--primary);letter-spacing:1px;}
+    header p{margin-top:6px;color:var(--muted);font-size:1rem;}
+    .panel{
+      background:var(--panel);
+      border-radius:22px;
+      box-shadow:var(--shadow);
+      padding:28px;
+      display:grid;
+      grid-template-columns:1.2fr 0.8fr;
+      gap:22px;
+      border:1px solid #d5e6f7;
+      position:relative;
+      overflow:hidden;
+    }
+    .panel::before{
+      content:"";
+      position:absolute;
+      top:-80px;right:-60px;
+      width:220px;height:220px;
+      background:rgba(0,88,156,0.08);
+      border-radius:50%;
+    }
+    .card{border-radius:18px;padding:24px;background:var(--card);border:1px solid #dbe9f6;}
+    .upload-title{font-size:1.2rem;margin-bottom:6px;color:var(--primary);font-weight:bold;}
+    .upload-sub{font-size:0.95rem;color:var(--muted);margin-bottom:16px;}
+    input[type="file"]{display:none;}
+    .btn{
+      display:inline-flex;align-items:center;justify-content:center;gap:8px;
+      padding:12px 20px;border-radius:14px;
+      background:linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      color:#ffffff;font-weight:bold;border:none;cursor:pointer;
+      box-shadow:0 10px 18px rgba(0,88,156,0.25);
+    }
+    .btn-secondary{
+      background:#e9f2fb;color:var(--primary);
+      border:1px solid #cfe0f1;box-shadow:none;
+    }
+    .status{
+      margin-top:16px;background:#eef5fb;padding:14px;border-radius:12px;
+      font-size:0.95rem;color:var(--muted);border:1px solid #dbe9f6;
+    }
+    .right{display:flex;flex-direction:column;gap:14px;}
+    .info,.download{
+      background:#f7fbff;border-radius:16px;padding:18px;
+      border-left:6px solid var(--primary);border:1px solid #dbe9f6;
+    }
+    .info h3,.download h3{color:var(--primary);margin-bottom:8px;}
+    .download{text-align:center;}
+
+    .dashboard{
+      margin-top:26px;
+      background:#ffffff;
+      border-radius:22px;
+      padding:24px;
+      border:1px solid #d5e6f7;
+      box-shadow:var(--shadow);
+    }
+    .dash-title{color:var(--primary);font-weight:bold;margin-bottom:14px;font-size:1.1rem;}
+    .kpi-grid{
+      display:grid;
+      grid-template-columns:repeat(4, 1fr);
+      gap:12px;
+      margin-bottom:16px;
+    }
+    .kpi{
+      background:#f7fbff;border-radius:14px;padding:12px;border:1px solid #dbe9f6;
+    }
+    .kpi h4{color:var(--muted);font-size:0.85rem;margin-bottom:6px;}
+    .kpi p{color:var(--primary);font-size:1.3rem;font-weight:bold;}
+    .histograms{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:14px;
+    }
+    .histogram{
+      background:#f7fbff;border-radius:14px;padding:14px;border:1px solid #dbe9f6;
+    }
+    .histogram h5{color:var(--muted);font-size:0.85rem;margin-bottom:8px;}
+    .bars{
+      display:flex;align-items:flex-end;gap:8px;height:140px;
+      background:
+        linear-gradient(90deg, rgba(0,88,156,0.06) 0%, rgba(0,88,156,0.02) 100%),
+        repeating-linear-gradient(90deg, rgba(0,0,0,0.03) 0 12px, transparent 12px 24px);
+      border-radius:12px;padding:10px;border:1px solid #dbe9f6;
+    }
+    .bar{
+      flex:1;background:linear-gradient(180deg, #5aa7ea 0%, #1f6fb3 100%);
+      border-radius:8px 8px 4px 4px;min-height:6px;transition:height 0.6s ease;
+    }
+    .legend{
+      margin-top:8px;display:grid;grid-template-columns:repeat(3, 1fr);
+      gap:6px;color:var(--muted);font-size:0.75rem;
+    }
+    @media (max-width:980px){
+      .panel{grid-template-columns:1fr}
+      .kpi-grid{grid-template-columns:1fr 1fr}
+      .histograms{grid-template-columns:1fr}
+      .legend{grid-template-columns:1fr 1fr}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <header>
+      <h1>Filtrado y Comparación</h1>
+      <p>Sube tus CSV y genera el dashboard automáticamente</p>
+    </header>
+
+    <section class="panel">
+      <div class="card">
+        <div class="upload-title">Filtrado y Comparación de Datos</div>
+        <div class="upload-sub">Sube los CSV para filtrar y comparar con la base de datos</div>
+
+        <label class="btn" for="csvA">Subir CSV #1</label>
+        <input id="csvA" type="file" accept=".csv" />
+        <div style="height:12px;"></div>
+
+        <label class="btn" for="csvB">Subir CSV #2</label>
+        <input id="csvB" type="file" accept=".csv" />
+        <div style="height:12px;"></div>
+
+        <label class="btn btn-secondary" for="csvBase">Subir Base de Datos (CSV)</label>
+        <input id="csvBase" type="file" accept=".csv" />
+
+        <div style="margin-top:16px;">
+          <button class="btn">Comparar y Filtrar</button>
+        </div>
+
+        <div class="status" id="csvStatus">
+          Estado: Esperando archivos CSV...
+        </div>
+      </div>
+
+      <div class="right">
+        <div class="info">
+          <h3>Resultado Final</h3>
+          <p>Aquí se mostrarán los datos totalmente distintos después de comparar los 2 CSV con la base de datos.</p>
+        </div>
+
+        <div class="download">
+          <h3>Descargar Diferencias</h3>
+          <p>Cuando termine el proceso, podrás descargar el reporte aquí.</p>
+          <button class="btn">Descargar</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="dashboard">
+      <div class="dash-title">Dashboard dinámico (CSV de base de datos)</div>
+
+      <div class="kpi-grid">
+        <div class="kpi"><h4>Total registros</h4><p id="kpiTotal">0</p></div>
+        <div class="kpi"><h4>Programas únicos</h4><p id="kpiProgramas">0</p></div>
+        <div class="kpi"><h4>Servicios únicos</h4><p id="kpiServicios">0</p></div>
+        <div class="kpi"><h4>PRG_FIRM completos</h4><p id="kpiFirm">0%</p></div>
+      </div>
+
+      <div class="histograms">
+        <div class="histogram">
+          <h5>Histograma por MES (Top 6)</h5>
+          <div class="bars" id="barsMes"></div>
+          <div class="legend" id="legendMes"></div>
+        </div>
+        <div class="histogram">
+          <h5>Histograma por SERVICIO (Top 6)</h5>
+          <div class="bars" id="barsServicio"></div>
+          <div class="legend" id="legendServicio"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const csvBaseInput = document.getElementById("csvBase");
+    const csvStatus = document.getElementById("csvStatus");
+    const kpiTotal = document.getElementById("kpiTotal");
+    const kpiProgramas = document.getElementById("kpiProgramas");
+    const kpiServicios = document.getElementById("kpiServicios");
+    const kpiFirm = document.getElementById("kpiFirm");
+    const barsMes = document.getElementById("barsMes");
+    const legendMes = document.getElementById("legendMes");
+    const barsServicio = document.getElementById("barsServicio");
+    const legendServicio = document.getElementById("legendServicio");
+
+    function parseCSV(text){
+      const lines = text.trim().split(/\r?\n/);
+      const headers = lines.shift().split(",").map(h => h.trim());
+      return lines.map(line => {
+        const values = line.split(",").map(v => v.trim());
+        const obj = {};
+        headers.forEach((h, i) => obj[h] = values[i] ?? "");
+        return obj;
+      });
+    }
+
+    function countBy(rows, key){
+      const map = new Map();
+      rows.forEach(r => {
+        const val = (r[key] || "").trim();
+        if(!val) return;
+        map.set(val, (map.get(val) || 0) + 1);
+      });
+      return Array.from(map.entries()).sort((a,b)=>b[1]-a[1]).slice(0,6);
+    }
+
+    function renderBars(container, legend, data){
+      container.innerHTML = "";
+      legend.innerHTML = "";
+      const max = Math.max(...data.map(d=>d[1]), 1);
+      data.forEach(([label, value])=>{
+        const bar = document.createElement("div");
+        bar.className = "bar";
+        bar.style.height = `${(value / max) * 100}%`;
+        container.appendChild(bar);
+
+        const item = document.createElement("div");
+        item.textContent = `${label}: ${value}`;
+        legend.appendChild(item);
+      });
+    }
+
+    csvBaseInput.addEventListener("change", (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const rows = parseCSV(reader.result);
+
+        csvStatus.textContent = `Estado: Base de datos cargada (${rows.length} filas).`;
+
+        kpiTotal.textContent = rows.length.toLocaleString();
+        kpiProgramas.textContent = new Set(rows.map(r => r["PROGRAMA"]?.trim()).filter(Boolean)).size;
+        kpiServicios.textContent = new Set(rows.map(r => r["SERVICIO"]?.trim()).filter(Boolean)).size;
+
+        const firmCount = rows.filter(r => (r["PRG_FIRM"] || "").trim() !== "").length;
+        const firmPct = rows.length ? Math.round((firmCount / rows.length) * 100) : 0;
+        kpiFirm.textContent = `${firmPct}%`;
+
+        renderBars(barsMes, legendMes, countBy(rows, "MES"));
+        renderBars(barsServicio, legendServicio, countBy(rows, "SERVICIO"));
+      };
+      reader.readAsText(file);
+    });
+  </script>
+</body>
+</html>
