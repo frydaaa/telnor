@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
@@ -19,7 +19,11 @@ app.add_middleware(
 DOWNLOADS = {}
 
 @app.post("/procesar")
-async def procesar_archivos(documento: UploadFile = File(...), base: UploadFile = File(...)):
+async def procesar_archivos(
+    documento: UploadFile = File(...),
+    base: UploadFile = File(...),
+    semana: int = Form(6)  # <-- SEM viene del frontend
+):
     with tempfile.TemporaryDirectory() as tmp:
         doc_path = os.path.join(tmp, documento.filename)
         base_path = os.path.join(tmp, base.filename)
@@ -41,7 +45,7 @@ async def procesar_archivos(documento: UploadFile = File(...), base: UploadFile 
         df_GZ = pd.read_excel(base_path, sheet_name="GZ")
         df_GZ = df_GZ.iloc[:, :11]
 
-        Sem = 6
+        Sem = semana  # <-- ahora depende del frontend
 
         df_TP = pd.read_excel(base_path, sheet_name="BD")
         df_TP = df_TP.iloc[12:].reset_index(drop=True)
@@ -157,7 +161,6 @@ async def procesar_archivos(documento: UploadFile = File(...), base: UploadFile 
 
         preview = df_ND.head(5).to_dict(orient="records")
 
-        # Archivo completo
         out_path = os.path.join(tmp, "diferencias.xlsx")
         with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
             df_NR.to_excel(writer, index=False, sheet_name="Nuevos_Registros")
@@ -170,7 +173,6 @@ async def procesar_archivos(documento: UploadFile = File(...), base: UploadFile 
             dst.write(src.read())
         DOWNLOADS[file_id] = saved_path
 
-        # Archivo SOLO df_SGS
         sgs_path = os.path.join(tmp, "df_sgs.xlsx")
         df_SGS.to_excel(sgs_path, index=False)
 

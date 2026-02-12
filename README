@@ -1,1 +1,104 @@
+1) Descargar o copiar la carpeta TELNOR
+Recibe una carpeta llamada TELNOR.
 
+Dentro debe haber:
+
+TELNOR/
+├─ backend/
+│  └─ TableroMañanero.py
+├─ frontend/
+│  └─ chrstian.html
+│  └─ index.html
+│  └─ valeria-semaforo.html
+├─ imagenes
+├─ requirements.txt
+│  └─ requirements.txt
+└─ README.txt
+
+
+
+2) Abrir Terminal (Mac)
+Abre Finder
+Ve a Aplicaciones > Utilidades
+Abre Terminal
+
+
+
+3) Ir a la carpeta TELNOR
+En la terminal escribe (y presiona Enter):
+
+cd ruta/donde/esta/TELNOR RT ACCESO PATH ACCESS
+
+Ejemplo si está en Descargas:
+
+cd ~/Downloads/TELNOR
+
+
+4) Crear el entorno virtual (solo una vez)
+En la terminal escribe:
+
+python3 -m venv .venv
+Esto crea una carpeta oculta llamada .venv.
+
+
+
+5) Activar el entorno virtual
+Escribe:
+
+source .venv/bin/activate
+Si funcionó, verás algo así en la terminal:
+
+(.venv) usuario@computadora
+
+
+
+
+6) Instalar las dependencias
+Ahora escribe:
+
+pip install -r requirements.txt
+Esto puede tardar unos minutos.
+
+
+
+
+7) Ejecutar el backend
+En la misma terminal escribe:
+
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8001
+Si todo salió bien, verás algo como:
+
+Uvicorn running on http://127.0.0.1:8001
+
+
+
+
+8) Abrir el frontend (la página HTML)
+Busca el archivo:
+
+frontend/filtrado-dashboard.html
+Haz doble clic y se abrirá en el navegador.
+
+
+
+
+9) Probar el sistema
+Selecciona Número de Semana
+Sube el Documento Excel
+Sube la Base de datos Excel
+Haz clic en Comparar y Filtrar
+Aparecerán KPIs, histogramas y la vista previa
+Usa los botones de descarga
+
+
+
+10) Apagar el backend
+Cuando termines, vuelve a la terminal y presiona:
+
+
+Ctrl + C
+✅ Si aparece error “command not found: uvicorn”
+Significa que no instalaste las dependencias.
+Vuelve al paso 6 y repite:
+
+pip install -r requirements.txt
