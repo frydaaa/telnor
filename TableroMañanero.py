@@ -18,7 +18,8 @@ df_GZ = df_GZ.iloc[:, :11]
 df_PONN = pd.read_excel("assets/Seguimiento PROGRAMAS FTTH-TBA_202604_Feb.xlsm", sheet_name="SGS-PON NUEVO")
 df_PONE = pd.read_excel("assets/Seguimiento PROGRAMAS FTTH-TBA_202604_Feb.xlsm", sheet_name="SGS-PON EXISTENTE")
 
-Sem = 6
+Sem =  date.today().isocalendar().week
+print(Sem)
 
 #Tabla Principal
 df_TP = pd.read_excel("assets/Seguimiento PROGRAMAS FTTH-TBA_202604_Feb.xlsm", sheet_name="BD")
@@ -260,5 +261,5 @@ for i in range(len(df_NR)):
 
     df_TP.loc[len(df_TP)-1, "PUENTES"] = df_NR.loc[i, "Pon"]
 
-    print(df_TP.loc[len(df_TP)-1])
-    print("==" * 50)
+""""    print(df_TP.loc[len(df_TP)-1])
+    print("==" * 50)"""
