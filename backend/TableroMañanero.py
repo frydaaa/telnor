@@ -203,3 +203,4 @@ def descargar(file_id: str):
 
     path = DOWNLOADS[file_id]
     return FileResponse(path, filename="diferencias.xlsx")
+# El endpoint para descargar el archivo de SGS es similar, solo cambia el nombre del archivo y la ruta
