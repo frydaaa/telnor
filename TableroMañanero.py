@@ -1,24 +1,27 @@
 import pandas as pd
-
+from datetime import date, timedelta
 
 #Tabla con Nuevos Datos a agregar 
-df_ND = pd.read_excel("Distritos nuevos Mara.xlsx")
+df_ND = pd.read_excel("assets/Distritos nuevos Mara.xlsx")
 df_ND = df_ND.iloc[:, :6]
 df_ND["SGS"] = df_ND["SGS"].fillna('N/A', inplace=False)
 
 
 #Tabla de Estados SGS
-df_ESGS = pd.read_excel("Seguimiento PROGRAMAS FTTH-TBA_202604_Feb.xlsm", sheet_name="cat_eFTTH")
+df_ESGS = pd.read_excel("assets/Seguimiento PROGRAMAS FTTH-TBA_202604_Feb.xlsm", sheet_name="cat_eFTTH")
 df_ESGS = df_ESGS.iloc[:, 5:7]  
 
 #Tabla de Regiones
-df_GZ = pd.read_excel("Seguimiento PROGRAMAS FTTH-TBA_202604_Feb.xlsm", sheet_name="GZ")
+df_GZ = pd.read_excel("assets/Seguimiento PROGRAMAS FTTH-TBA_202604_Feb.xlsm", sheet_name="GZ")
 df_GZ = df_GZ.iloc[:, :11]
+
+df_PONN = pd.read_excel("assets/Seguimiento PROGRAMAS FTTH-TBA_202604_Feb.xlsm", sheet_name="SGS-PON NUEVO")
+df_PONE = pd.read_excel("assets/Seguimiento PROGRAMAS FTTH-TBA_202604_Feb.xlsm", sheet_name="SGS-PON EXISTENTE")
 
 Sem = 6
 
 #Tabla Principal
-df_TP = pd.read_excel("Seguimiento PROGRAMAS FTTH-TBA_202604_Feb.xlsm", sheet_name="BD")
+df_TP = pd.read_excel("assets/Seguimiento PROGRAMAS FTTH-TBA_202604_Feb.xlsm", sheet_name="BD")
 df_TP = df_TP.iloc[12:].reset_index(drop=True)
 df_TP = df_TP.drop(df_TP.columns[:1], axis=1)
 df_TP.columns = df_TP.iloc[0]
@@ -142,13 +145,11 @@ while i < len(df):
 
 
             
-"""print("Faltantes por clasificar:\n")
-print(df,"\n")
-print("--"*50,"\n")
 
-print("Registrar solamente la clave SGS:\n")
+
+"""print("Registrar solamente la clave SGS:\n")
 print(df_SGS,"\n")
-print("--"*50,"\n")"""
+print("--"*50,"\n")
 
 print("Nuevos Registros:\n")
 print(df_NR,"\n")
@@ -162,79 +163,102 @@ print("=="*25,"\n")
 print(df_TP.iloc[:, 14:19].head(),"\n")
 print("=="*25,"\n")
 print(df_TP.columns,"\n")
-print("--"*50,"\n")
+print("--"*50,"\n")"""
 
-print(df_ESGS.head(),"\n")
-print("--"*50,"\n")
-print(df_GZ.head(),"\n")
 
-def zona_comercial(distrito):
+def zona_comercial(caso, distrito):
     for i in range(len(df_GZ)):
-        if df_GZ.loc[i, "DISTRITO"] == distrito:
+        if df_GZ.loc[i, "Distrito"] == distrito:
+            pos = i
             break
-        return df_GZ.loc[i, "Zona"]
-    
+    if caso == "zona":
+        return df_GZ.loc[pos, "Zona"]
+    elif caso == "cope":
+        return df_GZ.loc[pos, "COPE"]
+    elif caso == "loc":
+        return df_GZ.loc[pos, "Localidad"]
+
 def prioridad_etapa(estado):
     for n in range(len(df_ESGS)):
-        if df_ESGS.loc[n, "ESTADO"] == estado:
-            break
-        return df_ESGS.loc[n, "PRIORIDAD"]
-            
+        if df_ESGS.loc[n, "etapa.1"] == estado:
+            return df_ESGS.loc[n, "orden.1"]
 
+def etapaSGS(pos):
+    estado = "PENDIENTE SGS"
+    if df_NR.loc[pos, "Pon"] == "Nuevo":
+        for i in range(len(df_PONN)):
+            if df_NR.loc[pos, "SGS"] == df_PONN.loc[i, "SOLMASTER"]:
+                estado = df_PONN.loc[i, "Etapa Reporte"]
+    elif df_NR.loc[pos, "Pon"] == "Exist": 
+        for i in range(len(df_PONE)):
+            if df_NR.loc[pos, "SGS"] == df_PONE.loc[i, "SOLMASTER"]:
+                estado = df_PONE.loc[i, "Etapa Reporte"]
 
-"""# Agregar Nuevos Registros a la Tabla Principal
+    if estado == "zEn Servicio":
+        estado = "En Servicio"
+    return estado
+    
+def fecha():
+    dia = date.today()
+    dia = dia - timedelta(days=1)
+    dia = dia.strftime("%d/%m/%Y")
+
+# Agregar Nuevos Registros a la Tabla Principal
 for i in range(len(df_NR)):
 
-    df_TP.loc[len(df_TP), "GENERICO"] = "7. OTROS"
+    df_TP.loc[len(df_TP), "GENERICO"] = (
+        "7. OTROS"
+    )                                         
 
-    df_TP.loc[len(df_TP), "PROGRAMA"] = df_NR.loc[i, "PROG"]
-    
-    df_TP.loc[len(df_TP), "SEM PROG"] = Sem
-    
-    df_TP.loc[len(df_TP), "DISTRITO"] = df_NR.loc[i, "DIST"]
-
-    df_TP.loc[len(df_TP), "SGS"] = (
-        df_NR.loc[i, "SGS"] if df_NR.loc[i, "SGS"] != "N/A" else ""
+    df_TP.loc[len(df_TP)-1, "PROGRAMA"] = (
+        df_NR.loc[i, "PROG"]
     )
 
-    df_TP.loc[len(df_TP), "Terminales"] = df_NR.loc[i, "Terminal"]
-
-    df_TP.loc[len(df_TP), "Puertos Construidos"] = df_NR.loc[i, "PTOS"]
-
-    df_TP.loc[len(df_TP), "Prioridad etapa"] = (
-        
+    df_TP.loc[len(df_TP)-1, "SEM PROG"] = (
+        Sem
     )
 
-    df_TP.loc[len(df_TP), "ZONA COMERCIAL"] = zona_comercial(df_NR.loc[i, "DIST"])
-
-    df_TP.loc[len(df_TP), "COPE"] = (
-
+    df_TP.loc[len(df_TP)-1, "DISTRITO"] = (
+        df_NR.loc[i, "DIST"]
     )
 
-    df_TP.loc[len(df_TP), "LOCALIDAD"] = (
-
+    df_TP.loc[len(df_TP)-1, "SGS"] = (
+        df_NR.loc[i, "SGS"] if df_NR.loc[i, "SGS"] != "N/A" else None
     )
 
-    df_TP.loc[len(df_TP), "FECHA PROG"] = (
-
+    df_TP.loc[len(df_TP)-1, "Terminales"] = (
+        df_NR.loc[i, "Terminal"]
     )
 
-    df_TP.loc[len(df_TP), "FECHA PES"] = (
-
+    df_TP.loc[len(df_TP)-1, "Puertos Construidos"] = (
+        df_NR.loc[i, "PTOS"]
     )
 
-    df_TP.loc[len(df_TP), "ETAPA SGS ACTUALIZADO"] = (
-
+    df_TP.loc[len(df_TP)-1, "ZONA COMERCIAL"] = (
+    zona_comercial("zona", df_NR.loc[i, "DIST"])
     )
 
-    df_TP.loc[len(df_TP), "PUENTES"] = (
-
+    df_TP.loc[len(df_TP)-1, "COPE"] = (
+        zona_comercial("cope", df_NR.loc[i, "DIST"])
     )
 
-    df_TP.loc[len(df_TP), "FastTrack"] = (
-
+    df_TP.loc[len(df_TP)-1, "LOCALIDAD"] = (
+        zona_comercial("loc", df_NR.loc[i, "DIST"])
     )
 
-    df_TP.loc[len(df_TP), "Comentarios"] = (
+    df_TP.loc[len(df_TP)-1, "ETAPA SGS ACTUALIZADO"] = (
+        etapaSGS(i)
+    )
 
-    )"""
+    df_TP.loc[len(df_TP)-1, "Prioridad etapa"] = (
+        prioridad_etapa(df_TP.loc[i, "ETAPA SGS ACTUALIZADO"])
+    )
+
+    df_TP.loc[len(df_TP)-1, "FECHA PES"] = (
+        fecha() if etapaSGS(i) == "En Servicio" else None 
+    )
+
+    df_TP.loc[len(df_TP)-1, "PUENTES"] = df_NR.loc[i, "Pon"]
+
+    print(df_TP.loc[len(df_TP)-1])
+    print("==" * 50)
