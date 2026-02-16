@@ -9,11 +9,9 @@
       --primary:#00589C;
       --primary-light:#2d7cc2;
       --primary-dark:#003f70;
-
       --bg:#f1f6fb;
       --panel:#ffffff;
       --card:#f7fbff;
-
       --text:#0b1d2e;
       --muted:#5c738a;
       --shadow:0 18px 40px rgba(0,0,0,0.18);
@@ -71,6 +69,7 @@
     .status{
       margin-top:16px;background:#eef5fb;padding:14px;border-radius:12px;
       font-size:0.95rem;color:var(--muted);border:1px solid #dbe9f6;
+      white-space:pre-wrap;
     }
     .right{display:flex;flex-direction:column;gap:14px;}
     .info,.download{
@@ -94,16 +93,16 @@
     <section class="panel">
       <div class="card">
         <div class="upload-title">Subir Archivo</div>
-        <div class="upload-sub">Formatos soportados: PDF, DOCX, TXT</div>
+        <div class="upload-sub">Formatos soportados: XLSX, XLS</div>
 
         <label class="btn" for="fileInput">Seleccionar Archivo</label>
-        <input id="fileInput" type="file" />
+        <input id="fileInput" type="file" accept=".xlsx,.xls" />
 
         <div style="margin-top:14px;">
-          <button class="btn btn-secondary">Adjuntar y Procesar</button>
+          <button class="btn btn-secondary" id="procesarBtn">Adjuntar y Procesar</button>
         </div>
 
-        <div class="status">
+        <div class="status" id="statusMsg">
           Estado: Esperando archivo...
         </div>
 
@@ -125,10 +124,75 @@
         <div class="download">
           <h3>Documento Limpio</h3>
           <p>Cuando termine el proceso, podrás descargarlo aquí.</p>
-          <button class="btn">Descargar</button>
+          <button class="btn" id="downloadBtn">Descargar</button>
         </div>
       </div>
     </section>
   </div>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:8071";
+    const fileInput = document.getElementById("fileInput");
+    const procesarBtn = document.getElementById("procesarBtn");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const statusMsg = document.getElementById("statusMsg");
+
+    let lastDownloadId = null;
+
+    // Aviso si se abrió con file://
+    if (location.protocol === "file:") {
+      statusMsg.textContent = "Abre este HTML con Live Server para evitar errores de conexión.";
+    }
+
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files[0]) {
+        statusMsg.textContent = `Archivo seleccionado: ${fileInput.files[0].name}`;
+      } else {
+        statusMsg.textContent = "Estado: Esperando archivo...";
+      }
+    });
+
+    procesarBtn.addEventListener("click", async () => {
+      if (!fileInput.files[0]) {
+        alert("Selecciona un archivo primero.");
+        return;
+      }
+
+      statusMsg.textContent = "Procesando archivo...";
+      procesarBtn.disabled = true;
+
+      const formData = new FormData();
+      formData.append("archivo", fileInput.files[0]);
+
+      try {
+        const res = await fetch(`${API_BASE}/limpiar`, {
+          method: "POST",
+          body: formData
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          statusMsg.textContent = "Error del backend:\n" + JSON.stringify(data, null, 2);
+          return;
+        }
+
+        lastDownloadId = data.download_id;
+        statusMsg.textContent = "Proceso completado ✅";
+      } catch (err) {
+        statusMsg.textContent = "Error al procesar:\n" + err;
+      } finally {
+        procesarBtn.disabled = false;
+      }
+    });
+
+    downloadBtn.addEventListener("click", () => {
+      if (!lastDownloadId) {
+        alert("Aún no hay archivo para descargar.");
+        return;
+      }
+      window.open(`${API_BASE}/descargar/${lastDownloadId}`, "_blank");
+    });
+  </script>
 </body>
 </html>

@@ -1,124 +1,95 @@
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
+import tempfile
 import os
 import re
+import uuid
 
-# --- CONFIGURACIÓN ---
-INPUT_FOLDER = 'input'
-OUTPUT_FOLDER = 'output'
-HOJA_OBJETIVO = 'Nodos'
-OUTPUT_FILE_NAME = 'semaforo_limpio.xlsx'
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+DOWNLOADS = {}
+
+HOJA_OBJETIVO = "Nodos"
+OUTPUT_FILE_NAME = "semaforo_limpio.xlsx"
 
 
-def obtener_archivo():
-    if not os.path.exists(INPUT_FOLDER):
-        os.makedirs(INPUT_FOLDER)
-        return None
-
-    archivos = [
-        f for f in os.listdir(INPUT_FOLDER)
-        if f.endswith(('.xlsx', '.xls')) and not f.startswith('~$')
-    ]
-    return os.path.join(INPUT_FOLDER, archivos[0]) if archivos else None
+@app.get("/")
+def root():
+    return {"status": "ok", "message": "Backend LimpiezaControl activo"}
 
 
 def limpiar_probe_group_device(valor):
-    """
-    Local Probe » TIJUANA » BASTIJ26.TELNOR.NET -> BASTIJ26
-    """
     if pd.isna(valor):
         return ""
     if not isinstance(valor, str):
         valor = str(valor)
-
     valor = valor.replace("\u00a0", " ")
     valor = re.sub(r"\s+", " ", valor).strip()
-
     partes = re.split(r"\s*»\s*", valor)
     valor = partes[-1].strip()
-
     valor = valor.split(".", 1)[0].strip()
     return valor
 
 
 def limpiar_kbits(valor):
-    """
-    5,082,895 kbit/s -> 5082895 (numérico)
-    """
     if pd.isna(valor):
         return None
-
     if isinstance(valor, (int, float)):
         return valor
-
     valor = str(valor).replace("\u00a0", " ").strip()
-
-    # Quitar unidad (kbit/s, kbits/s, mayúsculas, etc.)
     valor = re.sub(r"\s*kbits?/s\s*$", "", valor, flags=re.IGNORECASE).strip()
-
-    # Quitar comas de miles
     valor = valor.replace(",", "")
-
     return pd.to_numeric(valor, errors="coerce")
 
 
 def extraer_vlan(sensor_val):
-    """
-    Extrae VLAN desde Sensor soportando:
-    - xe-11/1/0:1.1775 -> 1775
-    - TenGigE0/6/0/1.1431 -> 1431
-    - xe-8/1/1:2.1772 -> 1772
-    """
     if pd.isna(sensor_val):
         return None
-
     s = str(sensor_val).replace("\u00a0", " ").strip()
-
-    # Caso A: con ":" -> :<num>.<VLAN>
     m = re.search(r":\s*\d+\.(\d+)", s)
     if m:
         return pd.to_numeric(m.group(1), errors="coerce")
-
-    # Caso B: sin ":" -> /<num>.<VLAN>
     m = re.search(r"/\s*\d+\.(\d+)", s)
     if m:
         return pd.to_numeric(m.group(1), errors="coerce")
-
     return None
 
 
 def extraer_nom_equipo(sensor_val):
-    """
-    Extrae NomEquipo desde Sensor:
-    "... DSL[GPON][BCNGBAHIA-07][10G] ..." -> "BCNGBAHIA-07"
-    Regla: DSL[<tecnologia>][<NomEquipo>]...
-    """
     if pd.isna(sensor_val):
         return ""
-
     s = str(sensor_val).replace("\u00a0", " ").strip()
-
     m = re.search(r"DSL\[[^\]]+\]\[([^\]]+)\]", s, flags=re.IGNORECASE)
     if m:
         return m.group(1).strip()
-
     return ""
 
 
-def procesar_datos():
-    print("\n--- INICIANDO LIMPIEZA ---\n")
+@app.post("/limpiar")
+async def limpiar_archivo(archivo: UploadFile = File(...)):
+    with tempfile.TemporaryDirectory() as tmp:
+        input_path = os.path.join(tmp, archivo.filename)
+        with open(input_path, "wb") as f:
+            f.write(await archivo.read())
 
-    ruta_archivo = obtener_archivo()
-    if not ruta_archivo:
-        print(" No hay archivo en la carpeta input.")
-        return
+        # ✅ Detectar hoja: usar "Nodos" si existe, si no, usar la primera hoja
+        xls = pd.ExcelFile(input_path)
+        hoja_usar = HOJA_OBJETIVO if HOJA_OBJETIVO in xls.sheet_names else xls.sheet_names[0]
 
-    try:
-        print(f" Archivo encontrado: {ruta_archivo}")
-
-        # 1) Buscar fila de encabezado donde aparezca "Sensor"
+        # Buscar fila de encabezado donde aparezca "Sensor"
         df_temp = pd.read_excel(
-            ruta_archivo,
-            sheet_name=HOJA_OBJETIVO,
+            input_path,
+            sheet_name=hoja_usar,
             header=None,
             nrows=50
         )
@@ -130,96 +101,70 @@ def procesar_datos():
                 break
 
         if fila_encabezado == -1:
-            print(" No encontré la fila que contiene 'Sensor'.")
-            return
+            return JSONResponse({"error": "No encontré la fila que contiene 'Sensor'."}, status_code=400)
 
-        # 2) Cargar datos reales
         df = pd.read_excel(
-            ruta_archivo,
-            sheet_name=HOJA_OBJETIVO,
+            input_path,
+            sheet_name=hoja_usar,
             header=fila_encabezado
         )
 
-        # 3) Limpiar encabezados y quitar columnas vacías
+        # Limpiar encabezados
         df.columns = (
-            df.columns
-            .astype(str)
+            df.columns.astype(str)
             .str.replace("\u00a0", " ")
             .str.strip()
         )
         df = df.loc[:, ~df.columns.str.contains(r"^Unnamed", na=False)]
 
-        print(" Columnas detectadas:")
-        print(df.columns.tolist())
-
-        # 4) Limpiar Probe Group Device
         if "Probe Group Device" in df.columns:
-            print(" Limpiando 'Probe Group Device'...")
             df["Probe Group Device"] = df["Probe Group Device"].apply(limpiar_probe_group_device)
-            print(" Probe Group Device limpio.")
         else:
-            print(" No encontré la columna 'Probe Group Device'.")
-            print("DEBUG columnas (repr):", [repr(c) for c in df.columns])
-            return
+            return JSONResponse({"error": "No encontré la columna 'Probe Group Device'."}, status_code=400)
 
-        # 5) Limpiar columnas de velocidad (incluye Percentile/Percentil)
         columnas_velocidad = [
             c for c in df.columns
             if c.strip().lower() in ["average", "minimum", "maximum", "percentile", "percentil"]
         ]
         for col in columnas_velocidad:
-            print(f" Limpiando columna {col} (quitando kbit/s)...")
             df[col] = df[col].apply(limpiar_kbits)
 
-        # 6) Crear VLAN y NomEquipo desde Sensor
         if "Sensor" in df.columns:
-            print(" Extrayendo VLAN desde 'Sensor'")
             df["VLAN"] = df["Sensor"].apply(extraer_vlan)
-            print(" Columna 'VLAN' creada.")
-
-            print(" Extrayendo NomEquipo desde 'Sensor'...")
             df["NomEquipo"] = df["Sensor"].apply(extraer_nom_equipo)
-            print(" Columna 'NomEquipo' creada.")
-        else:
-            print(" No existe la columna 'Sensor', no pude crear 'VLAN' ni 'NomEquipo'.")
 
-        # 7) Ordenar por Percentile/Percentil si existe
         col_percentil = next((c for c in df.columns if c.strip().lower() in ["percentile", "percentil"]), None)
         if col_percentil:
-            print(f" Ordenando por {col_percentil}...")
             df[col_percentil] = pd.to_numeric(df[col_percentil], errors="coerce")
             df = df.sort_values(by=col_percentil, ascending=False)
 
-        # 8) Eliminar filas vacías en Sensor
         if "Sensor" in df.columns:
             df = df.dropna(subset=["Sensor"])
             df = df[df["Sensor"].astype(str).str.strip() != ""]
 
         df = df.fillna("")
 
-        # 9) Reordenar columnas: NomEquipo al inicio (columna A)
         if "NomEquipo" in df.columns:
             columnas = ["NomEquipo"] + [c for c in df.columns if c != "NomEquipo"]
             df = df[columnas]
-            print(" 'NomEquipo' movido a la primera columna.")
 
-        # 10) Guardar archivo limpio
-        if not os.path.exists(OUTPUT_FOLDER):
-            os.makedirs(OUTPUT_FOLDER)
+        output_path = os.path.join(tmp, OUTPUT_FILE_NAME)
+        df.to_excel(output_path, index=False)
 
-        ruta_salida = os.path.join(OUTPUT_FOLDER, OUTPUT_FILE_NAME)
-        df.to_excel(ruta_salida, index=False)
+        file_id = str(uuid.uuid4())
+        saved_path = os.path.join(tempfile.gettempdir(), f"{file_id}.xlsx")
 
-        print("\n" + "="*50)
-        print(" LIMPIEZA COMPLETADA")
-        print(f"Archivo generado en: {ruta_salida}")
-        print("="*50)
+        with open(output_path, "rb") as src, open(saved_path, "wb") as dst:
+            dst.write(src.read())
 
-    except PermissionError:
-        print(" El archivo de salida está abierto. Ciérralo e intenta nuevamente.")
-    except Exception as e:
-        print(f"\n Error inesperado: {e}")
+        DOWNLOADS[file_id] = saved_path
+
+        return {"message": "Limpieza completada", "download_id": file_id}
 
 
-if __name__ == "__main__":
-    procesar_datos()
+@app.get("/descargar/{file_id}")
+def descargar(file_id: str):
+    if file_id not in DOWNLOADS:
+        return JSONResponse({"error": "Archivo no encontrado"}, status_code=404)
+    path = DOWNLOADS[file_id]
+    return FileResponse(path, filename=OUTPUT_FILE_NAME)
