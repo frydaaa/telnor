@@ -75,33 +75,41 @@ def extraer_nom_equipo(sensor_val):
     return ""
 
 
-def _buscar_fila_encabezado(df_temp):
-    for idx, row in df_temp.iterrows():
-        fila = row.astype(str).str.lower().str.strip()
-        if fila.str.contains("sensor").any():
-            return idx
-    return -1
-
-
-async def _limpiar_impl(archivo: UploadFile):
+@app.post("/limpiar")
+async def limpiar_archivo(archivo: UploadFile = File(...)):
     with tempfile.TemporaryDirectory() as tmp:
         input_path = os.path.join(tmp, archivo.filename)
         with open(input_path, "wb") as f:
             f.write(await archivo.read())
 
-        # ✅ Detectar hoja (usa "Nodos" si existe, si no la primera)
+        # ✅ Detectar hoja: usar "Nodos" si existe, si no, usar la primera hoja
         xls = pd.ExcelFile(input_path)
         hoja_usar = HOJA_OBJETIVO if HOJA_OBJETIVO in xls.sheet_names else xls.sheet_names[0]
 
-        # ✅ Buscar fila de encabezado
-        df_temp = pd.read_excel(input_path, sheet_name=hoja_usar, header=None, nrows=60)
-        fila_encabezado = _buscar_fila_encabezado(df_temp)
+        # Buscar fila de encabezado donde aparezca "Sensor"
+        df_temp = pd.read_excel(
+            input_path,
+            sheet_name=hoja_usar,
+            header=None,
+            nrows=50
+        )
+
+        fila_encabezado = -1
+        for idx, row in df_temp.iterrows():
+            if "Sensor" in row.astype(str).str.cat(sep=" "):
+                fila_encabezado = idx
+                break
+
         if fila_encabezado == -1:
             return JSONResponse({"error": "No encontré la fila que contiene 'Sensor'."}, status_code=400)
 
-        df = pd.read_excel(input_path, sheet_name=hoja_usar, header=fila_encabezado)
+        df = pd.read_excel(
+            input_path,
+            sheet_name=hoja_usar,
+            header=fila_encabezado
+        )
 
-        # ✅ Limpiar encabezados
+        # Limpiar encabezados
         df.columns = (
             df.columns.astype(str)
             .str.replace("\u00a0", " ")
@@ -114,7 +122,10 @@ async def _limpiar_impl(archivo: UploadFile):
         else:
             return JSONResponse({"error": "No encontré la columna 'Probe Group Device'."}, status_code=400)
 
-        columnas_velocidad = [c for c in df.columns if c.strip().lower() in ["average","minimum","maximum","percentile","percentil"]]
+        columnas_velocidad = [
+            c for c in df.columns
+            if c.strip().lower() in ["average", "minimum", "maximum", "percentile", "percentil"]
+        ]
         for col in columnas_velocidad:
             df[col] = df[col].apply(limpiar_kbits)
 
@@ -122,7 +133,7 @@ async def _limpiar_impl(archivo: UploadFile):
             df["VLAN"] = df["Sensor"].apply(extraer_vlan)
             df["NomEquipo"] = df["Sensor"].apply(extraer_nom_equipo)
 
-        col_percentil = next((c for c in df.columns if c.strip().lower() in ["percentile","percentil"]), None)
+        col_percentil = next((c for c in df.columns if c.strip().lower() in ["percentile", "percentil"]), None)
         if col_percentil:
             df[col_percentil] = pd.to_numeric(df[col_percentil], errors="coerce")
             df = df.sort_values(by=col_percentil, ascending=False)
@@ -137,27 +148,18 @@ async def _limpiar_impl(archivo: UploadFile):
             columnas = ["NomEquipo"] + [c for c in df.columns if c != "NomEquipo"]
             df = df[columnas]
 
-        # ✅ Guardar archivo limpio
         output_path = os.path.join(tmp, OUTPUT_FILE_NAME)
         df.to_excel(output_path, index=False)
 
         file_id = str(uuid.uuid4())
         saved_path = os.path.join(tempfile.gettempdir(), f"{file_id}.xlsx")
+
         with open(output_path, "rb") as src, open(saved_path, "wb") as dst:
             dst.write(src.read())
 
         DOWNLOADS[file_id] = saved_path
+
         return {"message": "Limpieza completada", "download_id": file_id}
-
-
-@app.post("/limpiar")
-async def limpiar_archivo(archivo: UploadFile = File(...)):
-    return await _limpiar_impl(archivo)
-
-# Alias opcional si accidentalmente llaman /procesar
-@app.post("/procesar")
-async def procesar_alias(archivo: UploadFile = File(...)):
-    return await _limpiar_impl(archivo)
 
 
 @app.get("/descargar/{file_id}")
