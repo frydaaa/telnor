@@ -161,7 +161,6 @@
         <div class="upload-title">Filtrado y Comparación de Datos</div>
         <div class="upload-sub">Sube el documento y la base de datos en formato Excel (.xlsx)</div>
 
-        <!-- APARTADO SEMANA -->
         <div class="week-box">
           <label for="weekInput"><b>Número de Semana</b></label>
           <input type="number" id="weekInput" placeholder="Ej. 6" min="1" max="52" value="6">
@@ -235,6 +234,8 @@
   </div>
 
   <script>
+    const API_BASE = "http://127.0.0.1:8001";
+
     const weekInput = document.getElementById("weekInput");
     const docInput = document.getElementById("docInput");
     const baseInput = document.getElementById("baseInput");
@@ -320,7 +321,7 @@
       formData.append("semana", semana);
 
       try {
-        const res = await fetch("http://127.0.0.1:8001/procesar", {
+        const res = await fetch(`${API_BASE}/procesar`, {
           method: "POST",
           body: formData
         });
@@ -354,7 +355,7 @@
         alert("Aún no hay archivo para descargar.");
         return;
       }
-      window.open(`http://127.0.0.1:8001/descargar/${lastDownloadId}`, "_blank");
+      window.open(`${API_BASE}/descargar/${lastDownloadId}`, "_blank");
     });
 
     downloadSgsBtn.addEventListener("click", () => {
@@ -362,7 +363,7 @@
         alert("Aún no hay archivo df_SGS para descargar.");
         return;
       }
-      window.open(`http://127.0.0.1:8001/descargar/${lastDownloadSgsId}`, "_blank");
+      window.open(`${API_BASE}/descargar/${lastDownloadSgsId}`, "_blank");
     });
   </script>
 </body>
