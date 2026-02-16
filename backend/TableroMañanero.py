@@ -1,9 +1,10 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import tempfile
 import os
+import re
 import uuid
 
 app = FastAPI()
@@ -18,189 +19,150 @@ app.add_middleware(
 
 DOWNLOADS = {}
 
-@app.post("/procesar")
-async def procesar_archivos(
-    documento: UploadFile = File(...),
-    base: UploadFile = File(...),
-    semana: int = Form(6)  # <-- SEM viene del frontend
-):
+HOJA_OBJETIVO = "Nodos"
+OUTPUT_FILE_NAME = "semaforo_limpio.xlsx"
+
+
+@app.get("/")
+def root():
+    return {"status": "ok", "message": "Backend LimpiezaControl activo"}
+
+
+def limpiar_probe_group_device(valor):
+    if pd.isna(valor):
+        return ""
+    if not isinstance(valor, str):
+        valor = str(valor)
+    valor = valor.replace("\u00a0", " ")
+    valor = re.sub(r"\s+", " ", valor).strip()
+    partes = re.split(r"\s*»\s*", valor)
+    valor = partes[-1].strip()
+    valor = valor.split(".", 1)[0].strip()
+    return valor
+
+
+def limpiar_kbits(valor):
+    if pd.isna(valor):
+        return None
+    if isinstance(valor, (int, float)):
+        return valor
+    valor = str(valor).replace("\u00a0", " ").strip()
+    valor = re.sub(r"\s*kbits?/s\s*$", "", valor, flags=re.IGNORECASE).strip()
+    valor = valor.replace(",", "")
+    return pd.to_numeric(valor, errors="coerce")
+
+
+def extraer_vlan(sensor_val):
+    if pd.isna(sensor_val):
+        return None
+    s = str(sensor_val).replace("\u00a0", " ").strip()
+    m = re.search(r":\s*\d+\.(\d+)", s)
+    if m:
+        return pd.to_numeric(m.group(1), errors="coerce")
+    m = re.search(r"/\s*\d+\.(\d+)", s)
+    if m:
+        return pd.to_numeric(m.group(1), errors="coerce")
+    return None
+
+
+def extraer_nom_equipo(sensor_val):
+    if pd.isna(sensor_val):
+        return ""
+    s = str(sensor_val).replace("\u00a0", " ").strip()
+    m = re.search(r"DSL\[[^\]]+\]\[([^\]]+)\]", s, flags=re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+    return ""
+
+
+def _buscar_fila_encabezado(df_temp):
+    for idx, row in df_temp.iterrows():
+        fila = row.astype(str).str.lower().str.strip()
+        if fila.str.contains("sensor").any():
+            return idx
+    return -1
+
+
+async def _limpiar_impl(archivo: UploadFile):
     with tempfile.TemporaryDirectory() as tmp:
-        doc_path = os.path.join(tmp, documento.filename)
-        base_path = os.path.join(tmp, base.filename)
+        input_path = os.path.join(tmp, archivo.filename)
+        with open(input_path, "wb") as f:
+            f.write(await archivo.read())
 
-        with open(doc_path, "wb") as f:
-            f.write(await documento.read())
+        # ✅ Detectar hoja (usa "Nodos" si existe, si no la primera)
+        xls = pd.ExcelFile(input_path)
+        hoja_usar = HOJA_OBJETIVO if HOJA_OBJETIVO in xls.sheet_names else xls.sheet_names[0]
 
-        with open(base_path, "wb") as f:
-            f.write(await base.read())
+        # ✅ Buscar fila de encabezado
+        df_temp = pd.read_excel(input_path, sheet_name=hoja_usar, header=None, nrows=60)
+        fila_encabezado = _buscar_fila_encabezado(df_temp)
+        if fila_encabezado == -1:
+            return JSONResponse({"error": "No encontré la fila que contiene 'Sensor'."}, status_code=400)
 
-        # === TU LÓGICA ===
-        df_ND = pd.read_excel(doc_path)
-        df_ND = df_ND.iloc[:, :6]
-        df_ND["SGS"] = df_ND["SGS"].fillna('N/A', inplace=False)
+        df = pd.read_excel(input_path, sheet_name=hoja_usar, header=fila_encabezado)
 
-        df_ESGS = pd.read_excel(base_path, sheet_name="cat_eFTTH")
-        df_ESGS = df_ESGS.iloc[:, 5:7]
+        # ✅ Limpiar encabezados
+        df.columns = (
+            df.columns.astype(str)
+            .str.replace("\u00a0", " ")
+            .str.strip()
+        )
+        df = df.loc[:, ~df.columns.str.contains(r"^Unnamed", na=False)]
 
-        df_GZ = pd.read_excel(base_path, sheet_name="GZ")
-        df_GZ = df_GZ.iloc[:, :11]
-
-        Sem = semana  # <-- ahora depende del frontend
-
-        df_TP = pd.read_excel(base_path, sheet_name="BD")
-        df_TP = df_TP.iloc[12:].reset_index(drop=True)
-        df_TP = df_TP.drop(df_TP.columns[:1], axis=1)
-        df_TP.columns = df_TP.iloc[0]
-        df_TP = df_TP.iloc[1:].reset_index(drop=True)
-        df_TP = df_TP.iloc[:, :19]
-        df_TP["PUENTES"] = df_TP['PUENTES'].fillna('N/A', inplace=False)
-        df_TP = df_TP[df_TP['SEM PROG'].isin([Sem])].reset_index(drop=True)
-
-        y = 0
-        df_C = pd.DataFrame(columns=["BUSCA X SGS","B X DISTRITO", "Ter x Dis", "¿Igual?"])
-
-        for i in range(len(df_ND)):
-            for n in range(len(df_TP)):
-                if df_ND.loc[i, "SGS"] == df_TP.loc[n, "SGS"]:
-                    df_C.loc[y, "BUSCA X SGS"] = df_TP.loc[n, "Terminales"]
-                    y += 1
-                    break
-            else:
-                df_C.loc[y, "BUSCA X SGS"] = "N/A"
-                y += 1
-
-        y = 0
-        for i in range(len(df_ND)):
-            for n in range(len(df_TP)):
-                if df_ND.loc[i, "DIST"] == df_TP.loc[n, "DISTRITO"]:
-                    df_C.loc[y, "B X DISTRITO"] = df_TP.loc[n, "SGS"]
-                    y += 1
-                    break
-            else:
-                df_C.loc[y, "B X DISTRITO"] = "N/A"
-                y += 1
-
-        y = 0
-        for i in range(len(df_ND)):
-            for n in range(len(df_TP)):
-                if df_ND.loc[i, "DIST"] == df_TP.loc[n, "DISTRITO"]:
-                    df_C.loc[y, "Ter x Dis"] = df_TP.loc[n, "Terminales"]
-                    y += 1
-                    break
-            else:
-                df_C.loc[y, "Ter x Dis"] = "N/A"
-                y += 1
-
-        for i in range(len(df_C)):
-            if df_C.loc[i, "B X DISTRITO"] == df_ND.loc[i, "SGS"]:
-                if df_ND.loc[i, "SGS"] == "N/A":
-                    df_C.loc[i, "¿Igual?"] = "N/A"
-                else:
-                    df_C.loc[i, "¿Igual?"] = "SI"
-            else:
-                if df_C.loc[i, "BUSCA X SGS"] == "N/A" and df_C.loc[i, "B X DISTRITO"] == "N/A" and df_C.loc[i, "Ter x Dis"] == "N/A":
-                    df_C.loc[i, "¿Igual?"] = "N/A"
-                else:
-                    df_C.loc[i, "¿Igual?"] = "NO"
-
-        df = pd.concat([df_ND, df_C], axis=1)
-        df = df[df['¿Igual?'].isin(["NO", "N/A"])].reset_index(drop=True)
-        df["B X DISTRITO"] = df["B X DISTRITO"].fillna('N/A', inplace=False)
-
-        df_NR = pd.DataFrame(columns=["PROG", "SGS", "DIST", "PTOS", "Pon", "Terminal"])
-        y = 0
-        for i in range(len(df)):
-            if df.loc[i, "¿Igual?"] == "N/A":
-                df_NR.loc[y] = [df.loc[i, "PROG"], df.loc[i, "SGS"], df.loc[i, "DIST"], df.loc[i, "PTOS"], df.loc[i, "Pon"], df.loc[i, "Terminal"]]
-                y += 1
-            elif df.loc[i, "Terminal"] != df.loc[i, "Ter x Dis"]:
-                df_NR.loc[y] = [df.loc[i, "PROG"], df.loc[i, "SGS"], df.loc[i, "DIST"], df.loc[i, "PTOS"], df.loc[i, "Pon"], df.loc[i, "Terminal"]]
-                y += 1
-
-        for i in range(len(df_NR)):
-            for n in range(len(df)):
-                if df_NR.loc[i, "PROG"] == df.loc[n, "PROG"] and df_NR.loc[i, "SGS"] == df.loc[n, "SGS"] and df_NR.loc[i, "DIST"] == df.loc[n, "DIST"] and df_NR.loc[i, "Terminal"] == df.loc[n, "Terminal"]:
-                    df.drop(n, inplace=True)
-                    df.reset_index(drop=True, inplace=True)
-                    break
-
-        df_SGS = pd.DataFrame(columns=["SGS", "DIST", "Terminal"])
-        y = 0
-        for i in range(len(df)):
-            if df.loc[i, "B X DISTRITO"] == "N/A" and df.loc[i, "Terminal"] == df.loc[i, "Ter x Dis"]:
-                df_SGS.loc[y] = [df.loc[i, "SGS"], df.loc[i, "DIST"], df.loc[i, "Terminal"]]
-                y += 1
-
-        for i in (df_SGS.index):
-            for n in (df).index:
-                if df_SGS.loc[i, "SGS"] == df.loc[n, "SGS"] and df_SGS.loc[i, "DIST"] == df.loc[n, "DIST"] and df_SGS.loc[i, "Terminal"] == df.loc[n, "Terminal"]:
-                    df.drop(n, inplace=True)
-                    df.reset_index(drop=True, inplace=True)
-                    break
-
-        i = 0
-        while i < len(df):
-            if df.loc[i, "Terminal"] == df.loc[i, "Ter x Dis"]:
-                df.drop(i, inplace=True)
-                df.reset_index(drop=True, inplace=True)
-            else:
-                i += 1
-
-        total_registros = len(df_TP)
-        programas_unicos = df_TP["PROGRAMA"].nunique() if "PROGRAMA" in df_TP.columns else 0
-        servicios_unicos = df_TP["SERVICIO"].nunique() if "SERVICIO" in df_TP.columns else 0
-
-        if "PRG_FIRM" in df_TP.columns:
-            firm_count = df_TP["PRG_FIRM"].fillna("").astype(str).str.strip().ne("").sum()
-            prg_firm_pct = round((firm_count / len(df_TP)) * 100, 2) if len(df_TP) else 0
+        if "Probe Group Device" in df.columns:
+            df["Probe Group Device"] = df["Probe Group Device"].apply(limpiar_probe_group_device)
         else:
-            prg_firm_pct = 0
+            return JSONResponse({"error": "No encontré la columna 'Probe Group Device'."}, status_code=400)
 
-        hist_mes = df_TP["MES"].value_counts().head(6).to_dict() if "MES" in df_TP.columns else {}
-        hist_serv = df_TP["SERVICIO"].value_counts().head(6).to_dict() if "SERVICIO" in df_TP.columns else {}
+        columnas_velocidad = [c for c in df.columns if c.strip().lower() in ["average","minimum","maximum","percentile","percentil"]]
+        for col in columnas_velocidad:
+            df[col] = df[col].apply(limpiar_kbits)
 
-        preview = df_ND.head(5).to_dict(orient="records")
+        if "Sensor" in df.columns:
+            df["VLAN"] = df["Sensor"].apply(extraer_vlan)
+            df["NomEquipo"] = df["Sensor"].apply(extraer_nom_equipo)
 
-        out_path = os.path.join(tmp, "diferencias.xlsx")
-        with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
-            df_NR.to_excel(writer, index=False, sheet_name="Nuevos_Registros")
-            df_SGS.to_excel(writer, index=False, sheet_name="Registrar_SGS")
-            df.to_excel(writer, index=False, sheet_name="Faltantes")
+        col_percentil = next((c for c in df.columns if c.strip().lower() in ["percentile","percentil"]), None)
+        if col_percentil:
+            df[col_percentil] = pd.to_numeric(df[col_percentil], errors="coerce")
+            df = df.sort_values(by=col_percentil, ascending=False)
+
+        if "Sensor" in df.columns:
+            df = df.dropna(subset=["Sensor"])
+            df = df[df["Sensor"].astype(str).str.strip() != ""]
+
+        df = df.fillna("")
+
+        if "NomEquipo" in df.columns:
+            columnas = ["NomEquipo"] + [c for c in df.columns if c != "NomEquipo"]
+            df = df[columnas]
+
+        # ✅ Guardar archivo limpio
+        output_path = os.path.join(tmp, OUTPUT_FILE_NAME)
+        df.to_excel(output_path, index=False)
 
         file_id = str(uuid.uuid4())
         saved_path = os.path.join(tempfile.gettempdir(), f"{file_id}.xlsx")
-        with open(out_path, "rb") as src, open(saved_path, "wb") as dst:
+        with open(output_path, "rb") as src, open(saved_path, "wb") as dst:
             dst.write(src.read())
+
         DOWNLOADS[file_id] = saved_path
+        return {"message": "Limpieza completada", "download_id": file_id}
 
-        sgs_path = os.path.join(tmp, "df_sgs.xlsx")
-        df_SGS.to_excel(sgs_path, index=False)
 
-        sgs_id = str(uuid.uuid4())
-        saved_sgs = os.path.join(tempfile.gettempdir(), f"{sgs_id}.xlsx")
-        with open(sgs_path, "rb") as src, open(saved_sgs, "wb") as dst:
-            dst.write(src.read())
-        DOWNLOADS[sgs_id] = saved_sgs
+@app.post("/limpiar")
+async def limpiar_archivo(archivo: UploadFile = File(...)):
+    return await _limpiar_impl(archivo)
 
-        return {
-            "kpis": {
-                "total": total_registros,
-                "programas": programas_unicos,
-                "servicios": servicios_unicos,
-                "prg_firm_pct": prg_firm_pct
-            },
-            "hist_mes": hist_mes,
-            "hist_serv": hist_serv,
-            "preview": preview,
-            "download_id": file_id,
-            "download_sgs_id": sgs_id
-        }
+# Alias opcional si accidentalmente llaman /procesar
+@app.post("/procesar")
+async def procesar_alias(archivo: UploadFile = File(...)):
+    return await _limpiar_impl(archivo)
+
 
 @app.get("/descargar/{file_id}")
 def descargar(file_id: str):
     if file_id not in DOWNLOADS:
         return JSONResponse({"error": "Archivo no encontrado"}, status_code=404)
-
     path = DOWNLOADS[file_id]
-    return FileResponse(path, filename="diferencias.xlsx")
-# El endpoint para descargar el archivo de SGS es similar, solo cambia el nombre del archivo y la ruta
+    return FileResponse(path, filename=OUTPUT_FILE_NAME)
