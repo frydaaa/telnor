@@ -4,150 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Filtrado y Dashboard</title>
-  <style>
-    :root{
-      --primary:#00589C;
-      --primary-light:#2d7cc2;
-      --primary-dark:#003f70;
-      --bg:#f1f6fb;
-      --panel:#ffffff;
-      --card:#f7fbff;
-      --text:#0b1d2e;
-      --muted:#5c738a;
-      --shadow:0 18px 40px rgba(0,0,0,0.18);
-    }
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{
-      font-family: Arial, sans-serif;
-      background: radial-gradient(circle at top left, #e6f0fb 0%, #f6f9fd 55%);
-      color:var(--text);
-      min-height:100vh;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      padding:30px 16px;
-    }
-    .wrapper{width:100%;max-width:1180px;}
-    header{text-align:center;margin-bottom:28px;}
-    header h1{font-size:2.3rem;color:var(--primary);letter-spacing:1px;}
-    header p{margin-top:6px;color:var(--muted);font-size:1rem;}
-    .panel{
-      background:var(--panel);
-      border-radius:22px;
-      box-shadow:var(--shadow);
-      padding:28px;
-      display:grid;
-      grid-template-columns:1.2fr 0.8fr;
-      gap:22px;
-      border:1px solid #d5e6f7;
-      position:relative;
-      overflow:hidden;
-    }
-    .panel::before{
-      content:"";
-      position:absolute;
-      top:-80px;right:-60px;
-      width:220px;height:220px;
-      background:rgba(0,88,156,0.08);
-      border-radius:50%;
-    }
-    .card{border-radius:18px;padding:24px;background:var(--card);border:1px solid #dbe9f6;}
-    .upload-title{font-size:1.2rem;margin-bottom:6px;color:var(--primary);font-weight:bold;}
-    .upload-sub{font-size:0.95rem;color:var(--muted);margin-bottom:16px;}
-    input[type="file"]{display:none;}
-    .btn{
-      display:inline-flex;align-items:center;justify-content:center;gap:8px;
-      padding:12px 20px;border-radius:14px;
-      background:linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-      color:#ffffff;font-weight:bold;border:none;cursor:pointer;
-      box-shadow:0 10px 18px rgba(0,88,156,0.25);
-    }
-    .btn-secondary{
-      background:#e9f2fb;color:var(--primary);
-      border:1px solid #cfe0f1;box-shadow:none;
-    }
-    .status{
-      margin-top:16px;background:#eef5fb;padding:14px;border-radius:12px;
-      font-size:0.95rem;color:var(--muted);border:1px solid #dbe9f6;
-    }
-    .right{display:flex;flex-direction:column;gap:14px;}
-    .info,.download{
-      background:#f7fbff;border-radius:16px;padding:18px;
-      border-left:6px solid var(--primary);border:1px solid #dbe9f6;
-    }
-    .info h3,.download h3{color:var(--primary);margin-bottom:8px;}
-    .download{text-align:center;}
-
-    .dashboard{
-      margin-top:26px;
-      background:#ffffff;
-      border-radius:22px;
-      padding:24px;
-      border:1px solid #d5e6f7;
-      box-shadow:var(--shadow);
-    }
-    .dash-title{color:var(--primary);font-weight:bold;margin-bottom:14px;font-size:1.1rem;}
-    .kpi-grid{
-      display:grid;
-      grid-template-columns:repeat(4, 1fr);
-      gap:12px;
-      margin-bottom:16px;
-    }
-    .kpi{
-      background:#f7fbff;border-radius:14px;padding:12px;border:1px solid #dbe9f6;
-    }
-    .kpi h4{color:var(--muted);font-size:0.85rem;margin-bottom:6px;}
-    .kpi p{color:var(--primary);font-size:1.3rem;font-weight:bold;}
-    .histograms{
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:14px;
-    }
-    .histogram{
-      background:#f7fbff;border-radius:14px;padding:14px;border:1px solid #dbe9f6;
-    }
-    .histogram h5{color:var(--muted);font-size:0.85rem;margin-bottom:8px;}
-    .bars{
-      display:flex;align-items:flex-end;gap:8px;height:140px;
-      background:
-        linear-gradient(90deg, rgba(0,88,156,0.06) 0%, rgba(0,88,156,0.02) 100%),
-        repeating-linear-gradient(90deg, rgba(0,0,0,0.03) 0 12px, transparent 12px 24px);
-      border-radius:12px;padding:10px;border:1px solid #dbe9f6;
-    }
-    .bar{
-      flex:1;background:linear-gradient(180deg, #5aa7ea 0%, #1f6fb3 100%);
-      border-radius:8px 8px 4px 4px;min-height:6px;transition:height 0.6s ease;
-    }
-    .legend{
-      margin-top:8px;display:grid;grid-template-columns:repeat(3, 1fr);
-      gap:6px;color:var(--muted);font-size:0.75rem;
-    }
-    #previewTable th, #previewTable td{
-      border:1px solid #dbe9f6;
-      padding:6px 8px;
-      text-align:left;
-    }
-    #previewTable th{
-      background:#e9f2fb;
-      color:#00589C;
-    }
-    .week-box{
-      margin-bottom:16px;
-      display:grid;
-      gap:6px;
-    }
-    .week-box input{
-      padding:10px 12px;
-      border-radius:10px;
-      border:1px solid #cfe0f1;
-    }
-    @media (max-width:980px){
-      .panel{grid-template-columns:1fr}
-      .kpi-grid{grid-template-columns:1fr 1fr}
-      .histograms{grid-template-columns:1fr}
-      .legend{grid-template-columns:1fr 1fr}
-    }
-  </style>
+  <link rel="stylesheet" href="estiloC.css">
 </head>
 <body>
   <div class="wrapper">
@@ -321,7 +178,7 @@
       formData.append("semana", semana);
 
       try {
-        const res = await fetch(`${API_BASE}/procesar`, {
+        const res = await fetch("http://127.0.0.1:8001/procesar", {
           method: "POST",
           body: formData
         });
@@ -355,7 +212,7 @@
         alert("Aún no hay archivo para descargar.");
         return;
       }
-      window.open(`${API_BASE}/descargar/${lastDownloadId}`, "_blank");
+      window.open(`http://127.0.0.1:8001/descargar/${lastDownloadId}`, "_blank");
     });
 
     downloadSgsBtn.addEventListener("click", () => {
@@ -363,7 +220,7 @@
         alert("Aún no hay archivo df_SGS para descargar.");
         return;
       }
-      window.open(`${API_BASE}/descargar/${lastDownloadSgsId}`, "_blank");
+      window.open(`http://127.0.0.1:8001/descargar/${lastDownloadSgsId}`, "_blank");
     });
   </script>
 </body>
